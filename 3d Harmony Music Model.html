@@ -1,0 +1,1353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Harmonic Geometry 3D — An Interactive Model of Music</title>
+<style>
+  :root{
+    --bg:#04050a;
+    --line:rgba(120,150,220,.12);
+    --text:#cfd6ee;
+    --dim:#6e77a0;
+    --accent:#6ee7ff;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--bg);color:var(--text);overflow:hidden;
+    font-family:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+    -webkit-font-smoothing:antialiased;
+    -webkit-tap-highlight-color:transparent;
+  }
+  #app{display:flex;height:100vh;height:100dvh;width:100vw;overflow:hidden}
+
+  /* ---------------- stage ---------------- */
+  #stageWrap{position:relative;flex:1 1 auto;min-width:0;min-height:0}
+  #stage{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab}
+  #stage:active{cursor:grabbing}
+
+  /* keyboard overlay */
+  #keysWrap{
+    position:absolute;left:16px;right:16px;bottom:14px;height:94px;
+    z-index:4;
+  }
+  #keysWrap::before{
+    content:'';position:absolute;inset:-40px -20px -20px;pointer-events:none;
+    background:linear-gradient(to top,rgba(4,5,10,.82),rgba(4,5,10,0));
+  }
+  #keys{position:relative;height:100%;z-index:1}
+
+  .key{
+    position:absolute;top:0;border-radius:0 0 6px 6px;cursor:pointer;
+    user-select:none;touch-action:none;
+    transition:background .07s ease, box-shadow .07s ease;
+  }
+  .key.white{
+    background:linear-gradient(180deg,rgba(26,32,54,.72) 0%,rgba(16,20,38,.72) 60%,rgba(9,12,24,.78) 100%);
+    border:1px solid rgba(120,150,220,.16);border-top:none;
+    box-shadow:inset 0 -8px 18px rgba(0,0,0,.55);
+    backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);
+  }
+  .key.white.active{
+    background:linear-gradient(180deg,#2f7ab0 0%,#1c4d78 70%,#123a5c 100%);
+    box-shadow:0 0 28px rgba(110,231,255,.55), inset 0 0 24px rgba(110,231,255,.35);
+  }
+  .key.black{
+    height:62%;z-index:2;
+    background:linear-gradient(180deg,rgba(11,14,27,.94) 0%,rgba(4,5,12,.96) 100%);
+    border:1px solid rgba(120,150,220,.12);
+    box-shadow:0 6px 14px rgba(0,0,0,.75), inset 0 -4px 10px rgba(0,0,0,.85);
+  }
+  .key.black.active{
+    background:linear-gradient(180deg,#1d5480 0%,#0d2b44 100%);
+    box-shadow:0 0 24px rgba(110,231,255,.6), inset 0 0 18px rgba(110,231,255,.35);
+  }
+
+  /* ---------------- panel ---------------- */
+  #panel{
+    width:340px;flex:none;position:relative;z-index:5;
+    background:linear-gradient(180deg,rgba(13,16,30,.92),rgba(6,7,15,.95));
+    border-left:1px solid var(--line);
+    padding:22px 20px 24px;
+    overflow-y:auto;display:flex;flex-direction:column;gap:18px;
+    backdrop-filter:blur(26px);-webkit-backdrop-filter:blur(26px);
+  }
+  #panel::-webkit-scrollbar{width:6px}
+  #panel::-webkit-scrollbar-thumb{background:rgba(120,150,220,.18);border-radius:3px}
+
+  h1{font-size:14px;font-weight:600;letter-spacing:.15em;text-transform:uppercase;color:#eaf2ff}
+  .sub{font-size:11.5px;color:var(--dim);line-height:1.5;margin-top:6px}
+
+  .sec-title{
+    font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;
+    color:var(--dim);margin-bottom:9px;display:flex;justify-content:space-between;gap:8px;
+  }
+  .sec-title span{color:var(--accent);font-variant-numeric:tabular-nums}
+
+  #spec{width:100%;height:108px;display:block;border-radius:8px;
+        background:rgba(8,10,20,.6);border:1px solid rgba(120,150,220,.08)}
+
+  #readout{display:flex;flex-direction:column;gap:5px;min-height:50px}
+  .row{
+    display:grid;grid-template-columns:40px 1fr 54px 52px;gap:6px;align-items:baseline;
+    font-size:11.5px;font-variant-numeric:tabular-nums;
+    padding:4px 8px;border-radius:6px;background:rgba(120,150,220,.05);
+  }
+  .row .nm{color:#eaf2ff;font-weight:600}
+  .row .fq{color:#9fb0d8}
+  .row .fq i{color:var(--dim);font-style:normal;font-size:9px;margin-left:3px}
+  .row .rt{color:#8f9ac4;text-align:right;font-size:10.5px}
+  .row .ct{text-align:right;color:#ffb86b;font-size:10.5px}
+  .row .ct.ok{color:#5ee2a0}
+  .empty{font-size:11.5px;color:var(--dim);padding:8px 0;line-height:1.5}
+
+  .segmented{display:flex;gap:6px;background:rgba(120,150,220,.06);padding:4px;border-radius:9px}
+  .segmented button{
+    flex:1;border:none;background:transparent;color:var(--dim);
+    font-size:11.5px;font-family:inherit;padding:7px 0;border-radius:6px;cursor:pointer;
+    transition:all .18s ease;letter-spacing:.03em;
+  }
+  .segmented button.active{background:rgba(110,231,255,.14);color:#d9f8ff;box-shadow:inset 0 0 14px rgba(110,231,255,.15)}
+  .segmented button:hover{color:#cfd6ee}
+
+  input[type=range]{
+    -webkit-appearance:none;appearance:none;width:100%;height:3px;border-radius:2px;
+    background:linear-gradient(90deg,rgba(110,231,255,.75),rgba(167,139,250,.75));
+    outline:none;cursor:pointer;
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none;width:14px;height:14px;border-radius:50%;
+    background:#0a0d18;border:2px solid var(--accent);
+    box-shadow:0 0 12px rgba(110,231,255,.7);cursor:pointer;
+  }
+  input[type=range]::-moz-range-thumb{
+    width:12px;height:12px;border-radius:50%;background:#0a0d18;
+    border:2px solid var(--accent);box-shadow:0 0 12px rgba(110,231,255,.7);cursor:pointer;
+  }
+
+  .presets{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+  .presets button{
+    border:1px solid rgba(120,150,220,.14);background:rgba(120,150,220,.05);
+    color:#9fb0d8;font-family:inherit;font-size:11px;padding:9px 2px;border-radius:7px;
+    cursor:pointer;transition:all .18s ease;
+  }
+  .presets button:hover{background:rgba(120,150,220,.12);color:#eaf2ff}
+  .presets button.active{
+    background:rgba(110,231,255,.16);color:#d9f8ff;
+    border-color:rgba(110,231,255,.45);box-shadow:0 0 18px rgba(110,231,255,.2);
+  }
+
+  footer{
+    font-size:10.5px;color:var(--dim);line-height:1.75;margin-top:auto;
+    padding-top:14px;border-top:1px solid var(--line);
+  }
+  footer kbd{
+    background:rgba(120,150,220,.13);border:1px solid rgba(120,150,220,.2);
+    border-radius:4px;padding:1px 5px;font-family:ui-monospace,monospace;font-size:9.5px;color:#b9c4e6;
+  }
+
+  #fatal{
+    position:absolute;inset:0;display:none;place-items:center;text-align:center;
+    background:#04050a;color:#8f9ac4;font-size:13px;padding:30px;z-index:99;line-height:1.7;
+  }
+
+  @media (max-width:900px){
+    #app{flex-direction:column}
+    #stageWrap{height:60vh;height:60dvh;flex:none}
+    #panel{width:100%;height:40vh;height:40dvh;border-left:none;border-top:1px solid var(--line)}
+    #keysWrap{height:78px;left:8px;right:8px;bottom:8px}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="stageWrap">
+    <canvas id="stage"></canvas>
+    <div id="keysWrap"><div id="keys"></div></div>
+    <div id="fatal">WebGL could not start on this device.</div>
+  </div>
+
+  <aside id="panel">
+    <header>
+      <h1>Harmonic Geometry 3D</h1>
+      <p class="sub">Pitch, timbre &amp; tuning projected into three dimensions.</p>
+    </header>
+
+    <section>
+      <div class="sec-title">Spectrum <span>log 60 Hz – 8 kHz</span></div>
+      <canvas id="spec"></canvas>
+    </section>
+
+    <section>
+      <div class="sec-title">Sounding</div>
+      <div id="readout"><div class="empty">play a note — previewing C major</div></div>
+    </section>
+
+    <section>
+      <div class="sec-title">Tuning system</div>
+      <div class="segmented" id="tuning">
+        <button data-v="et" class="active">12-TET</button>
+        <button data-v="ji">Just Intonation</button>
+      </div>
+    </section>
+
+    <section>
+      <div class="sec-title">Timbre — partial roll-off <span id="brightVal">1.40</span></div>
+      <input type="range" id="bright" min="0.8" max="3.2" step="0.05" value="1.4">
+    </section>
+
+    <section>
+      <div class="sec-title">Chords</div>
+      <div class="presets" id="presets"></div>
+    </section>
+
+    <footer>
+      Drag to orbit · scroll to zoom · click a node on the ring to toggle that pitch class.
+      Keys <kbd>A</kbd>–<kbd>K</kbd> play notes.
+    </footer>
+  </aside>
+</div>
+
+<script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+
+<script>
+(() => {
+'use strict';
+
+const TAU = Math.PI * 2;
+
+/* ═══════════════════════════════════════════════════════════════
+   1.  MUSICAL MATHEMATICS
+   ═══════════════════════════════════════════════════════════════ */
+
+const NOTE_NAMES = ['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'];
+
+const JI_RATIOS = [1/1, 16/15, 9/8, 6/5, 5/4, 4/3, 45/32, 3/2, 8/5, 5/3, 9/5, 15/8];
+const JI_ROOT_MIDI = 60;
+const JI_ROOT_FREQ = 440 * Math.pow(2, (JI_ROOT_MIDI - 69) / 12);
+
+const state = { tuning: 'et', brightness: 1.4 };
+const activeNotes = new Map();
+
+function freqFor(midi) {
+  if (state.tuning === 'et') return 440 * Math.pow(2, (midi - 69) / 12);
+  const d = midi - JI_ROOT_MIDI;
+  const oct = Math.floor(d / 12);
+  const semi = ((d % 12) + 12) % 12;
+  return JI_ROOT_FREQ * JI_RATIOS[semi] * Math.pow(2, oct);
+}
+
+function noteName(midi) {
+  return NOTE_NAMES[((midi % 12) + 12) % 12] + (Math.floor(midi / 12) - 1);
+}
+
+function gcd(a, b) { while (b) { [a, b] = [b, a % b]; } return a; }
+
+const RATIO_TABLE = (() => {
+  const seen = new Set(), out = [];
+  for (let q = 1; q <= 16; q++) {
+    for (let p = q; p <= q * 2; p++) {
+      const g = gcd(p, q), pp = p / g, qq = q / g;
+      if (qq > 16 || pp >= 2 * qq) continue;
+      const key = pp + ':' + qq;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ value: pp / qq, label: pp + ':' + qq });
+    }
+  }
+  return out;
+})();
+
+function nearestRatio(r) {
+  if (!(r > 0) || !isFinite(r)) return { value: 1, label: '1:1' };
+  const oct = Math.floor(Math.log2(r));
+  const rr = r / Math.pow(2, oct);
+  let best = RATIO_TABLE[0], bestD = Infinity;
+  for (const q of RATIO_TABLE) {
+    const d = Math.abs(Math.log2(rr / q.value));
+    if (d < bestD) { bestD = d; best = q; }
+  }
+  return best;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   2.  THREE.JS SCENE
+   ═══════════════════════════════════════════════════════════════ */
+
+let renderer, scene, camera, composer, bloomPass;
+let glowTex = null;
+
+let curveGroup, curveGeo, curveLine, curvePoints, curvePoints2;
+let curvePos, curveCol;
+const CURVE_N = 1600;
+const rxBuf = new Float64Array(CURVE_N);
+const ryBuf = new Float64Array(CURVE_N);
+const rzBuf = new Float64Array(CURVE_N);
+const tmpColor = new THREE.Color();
+
+let headSprite, headCore;
+
+let ringGroup, ringNodes = [], chordLine, chordPos;
+
+let specGroup, specBars = [];
+const SPEC_N = 72;
+const SPEC_R = 6.8;
+const SPEC_Y = -2.05;
+
+let starField, gridHelper;
+
+const RING_RADIUS = 4.9;
+const RING_Y = -1.35;
+
+/* camera orbit */
+let camTheta = 0.85, camPhi = 1.12, camDist = 12.2;
+let dragging = false;
+
+/* ═══════════════════════════════════════════════════════════════
+   3.  TEXTURES
+   ═══════════════════════════════════════════════════════════════ */
+
+function makeGlowTexture() {
+  const S = 128;
+  const c = document.createElement('canvas');
+  c.width = c.height = S;
+  const g = c.getContext('2d');
+  const grd = g.createRadialGradient(S/2, S/2, 0, S/2, S/2, S/2);
+  grd.addColorStop(0.00, 'rgba(255,255,255,1)');
+  grd.addColorStop(0.22, 'rgba(255,255,255,0.62)');
+  grd.addColorStop(0.52, 'rgba(255,255,255,0.16)');
+  grd.addColorStop(1.00, 'rgba(255,255,255,0)');
+  g.fillStyle = grd;
+  g.fillRect(0, 0, S, S);
+  return new THREE.CanvasTexture(c);
+}
+
+function makeLabelTexture(text, hex) {
+  const W = 160, H = 80;
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  g.clearRect(0, 0, W, H);
+  g.font = '600 46px ui-sans-serif, system-ui, -apple-system, sans-serif';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillStyle = hex;
+  g.shadowColor = hex;
+  g.shadowBlur = 16;
+  g.fillText(text, W/2, H/2 + 2);
+  return new THREE.CanvasTexture(c);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   4.  SCENE BOOTSTRAP
+   ═══════════════════════════════════════════════════════════════ */
+
+function initThree() {
+  const canvas = document.getElementById('stage');
+
+  renderer = new THREE.WebGLRenderer({
+    canvas, antialias: true, powerPreference: 'high-performance'
+  });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
+  renderer.setClearColor(0x04050a, 1);
+
+  scene = new THREE.Scene();
+  scene.fog = new THREE.FogExp2(0x04050a, 0.0165);
+
+  camera = new THREE.PerspectiveCamera(52, 1, 0.1, 320);
+  camera.position.set(0, 5, 12);
+
+  glowTex = makeGlowTexture();
+
+  /* ---- bloom ---- */
+  if (typeof THREE.EffectComposer !== 'undefined' && typeof THREE.UnrealBloomPass !== 'undefined') {
+    try {
+      composer = new THREE.EffectComposer(renderer);
+      composer.addPass(new THREE.RenderPass(scene, camera));
+      bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(1024, 1024), 0.72, 0.72, 0.18);
+      composer.addPass(bloomPass);
+    } catch (e) {
+      composer = null;
+    }
+  }
+
+  /* ---- stars ---- */
+  const starCount = 1400;
+  const sPos = new Float32Array(starCount * 3);
+  for (let i = 0; i < starCount; i++) {
+    const r = 34 + Math.random() * 62;
+    const th = Math.random() * TAU;
+    const ph = Math.acos(2 * Math.random() - 1);
+    sPos[i*3]     = r * Math.sin(ph) * Math.cos(th);
+    sPos[i*3 + 1] = r * Math.cos(ph) * 0.75;
+    sPos[i*3 + 2] = r * Math.sin(ph) * Math.sin(th);
+  }
+  const sGeo = new THREE.BufferGeometry();
+  sGeo.setAttribute('position', new THREE.BufferAttribute(sPos, 3));
+  starField = new THREE.Points(sGeo, new THREE.PointsMaterial({
+    size: 0.62, map: glowTex, color: 0x93a9ff, transparent: true, opacity: 0.55,
+    blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true
+  }));
+  scene.add(starField);
+
+  /* ---- ground grid ---- */
+  gridHelper = new THREE.PolarGridHelper(9.6, 8, 6, 96, 0x17233f, 0x0d1529);
+  gridHelper.position.y = -2.55;
+  gridHelper.material.transparent = true;
+  gridHelper.material.opacity = 0.55;
+  gridHelper.material.depthWrite = false;
+  scene.add(gridHelper);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   5.  THE HARMONIC KNOT  (nested 3D harmonic sum)
+   ═══════════════════════════════════════════════════════════════ */
+
+function initCurve() {
+  curveGroup = new THREE.Group();
+  curveGroup.position.y = 0.50;          // float the knot above the ring plane
+  scene.add(curveGroup);
+
+  curvePos = new Float32Array(CURVE_N * 3);
+  curveCol = new Float32Array(CURVE_N * 3);
+
+  curveGeo = new THREE.BufferGeometry();
+  curveGeo.setAttribute('position', new THREE.BufferAttribute(curvePos, 3));
+  curveGeo.setAttribute('color', new THREE.BufferAttribute(curveCol, 3));
+
+  /* thin luminous core line */
+  curveLine = new THREE.Line(curveGeo, new THREE.LineBasicMaterial({
+    vertexColors: true, transparent: true, opacity: 1,
+    blending: THREE.AdditiveBlending, depthWrite: false
+  }));
+  curveGroup.add(curveLine);
+
+  /* main particle thread */
+  curvePoints = new THREE.Points(curveGeo, new THREE.PointsMaterial({
+    size: 0.085, map: glowTex, sizeAttenuation: true, vertexColors: true,
+    transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending,
+    depthWrite: false, alphaTest: 0.01
+  }));
+  curveGroup.add(curvePoints);
+
+  /* soft halo */
+  curvePoints2 = new THREE.Points(curveGeo, new THREE.PointsMaterial({
+    size: 0.34, map: glowTex, sizeAttenuation: true, vertexColors: true,
+    transparent: true, opacity: 0.13, blending: THREE.AdditiveBlending,
+    depthWrite: false
+  }));
+  curveGroup.add(curvePoints2);
+
+  /* travelling head */
+  headSprite = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: glowTex, color: 0xcaf5ff, transparent: true,
+    blending: THREE.AdditiveBlending, depthWrite: false
+  }));
+  headSprite.scale.set(1.55, 1.55, 1);
+  curveGroup.add(headSprite);
+
+  headCore = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: glowTex, color: 0xffffff, transparent: true,
+    blending: THREE.AdditiveBlending, depthWrite: false
+  }));
+  headCore.scale.set(0.42, 0.42, 1);
+  curveGroup.add(headCore);
+}
+
+/**
+ *  The harmonic sum lives on the complex plane:
+ *
+ *      S(τ) = Σ aₙ e^{i ωₙ τ}   =   Σ aₙ cos(ωₙ τ)  +  i Σ aₙ sin(ωₙ τ)
+ *                                   \_____ x _____/     \_____ z _____/
+ *
+ *  Its real & imaginary parts are the familiar nested rosette.  To lift the
+ *  rosette into space without losing the self-nesting, the vertical axis is
+ *  driven by the *doubled* harmonic family — the same partials, wound twice
+ *  as fast.  Every projection of the result is still a harmonic sum, so the
+ *  nested loops survive from every viewing angle:
+ *
+ *      x(τ) = Σ aₙ cos(ωₙ τ)
+ *      y(τ) = Σ aₙ sin(2ωₙ τ)      ← the "lift"
+ *      z(τ) = Σ aₙ sin(ωₙ τ)
+ */
+function rebuildCurve() {
+  if (!curveGeo) return;
+
+  const entries = [...activeNotes.entries()]
+    .map(([midi, n]) => ({ midi, freq: n.freq }))
+    .sort((a, b) => a.freq - b.freq);
+
+  /* visual preview while silent: C major */
+  const list = entries.length ? entries : [
+    { midi: 60, freq: freqFor(60) },
+    { midi: 64, freq: freqFor(64) },
+    { midi: 67, freq: freqFor(67) }
+  ];
+  const fRef = list[0].freq;
+
+  /* ---- partial set ---- */
+  const parts = [];
+  for (const nte of list) {
+    const ratio = nte.freq / fRef;
+    for (let h = 1; h <= 16; h++) {
+      const w = ratio * h;
+      if (w > 48) break;
+      const a = 1 / Math.pow(h, state.brightness);
+      if (a < 0.008) break;
+      parts.push(w, a);
+    }
+  }
+
+  rxBuf.fill(0);
+  ryBuf.fill(0);
+  rzBuf.fill(0);
+
+  const dTau = TAU / (CURVE_N - 1);
+
+  for (let k = 0; k < parts.length; k += 2) {
+    const w = parts[k], a = parts[k + 1];
+
+    /* planar family  e^{i ω τ} */
+    const th = w * dTau;
+    const cth = Math.cos(th), sth = Math.sin(th);
+    let cr = 1, ci = 0;
+
+    /* vertical family  e^{i 2ω τ}  — same partials, doubled winding */
+    const th2 = 2 * th;
+    const cth2 = Math.cos(th2), sth2 = Math.sin(th2);
+    let cr2 = 1, ci2 = 0;
+
+    for (let i = 0; i < CURVE_N; i++) {
+      rxBuf[i] += a * cr;      // Σ a cos(ωτ)
+      ryBuf[i] += a * ci;      // Σ a sin(ωτ)
+      rzBuf[i] += a * ci2;     // Σ a sin(2ωτ)
+
+      const nr = cr * cth - ci * sth;
+      ci = cr * sth + ci * cth;
+      cr = nr;
+
+      const nr2 = cr2 * cth2 - ci2 * sth2;
+      ci2 = cr2 * sth2 + ci2 * cth2;
+      cr2 = nr2;
+    }
+  }
+
+  /* ---- normalise as one unit so the natural proportions are kept ---- */
+  let maxPlanar = 1e-9, maxVert = 1e-9;
+  for (let i = 0; i < CURVE_N; i++) {
+    const p = Math.hypot(rxBuf[i], ryBuf[i]);
+    if (p > maxPlanar) maxPlanar = p;
+    const v = Math.abs(rzBuf[i]);
+    if (v > maxVert) maxVert = v;
+  }
+  const n = 1 / Math.max(maxPlanar, maxVert, 1e-9);
+
+  const PLANAR_SPAN = 2.95;
+  const VERT_SPAN   = 1.95;
+
+  for (let i = 0; i < CURVE_N; i++) {
+    const t = i / (CURVE_N - 1);
+
+    curvePos[i*3]     = rxBuf[i] * n * PLANAR_SPAN;
+    curvePos[i*3 + 1] = rzBuf[i] * n * VERT_SPAN;
+    curvePos[i*3 + 2] = ryBuf[i] * n * PLANAR_SPAN;
+
+    /* colour: cyan → violet → magenta, with softly dissolved ends */
+    const hue = 0.52 + t * 0.38;
+    let fade = Math.min(t / 0.055, (1 - t) / 0.055);
+    fade = Math.max(0, Math.min(1, fade));
+    fade = fade * fade * (3 - 2 * fade);
+
+    tmpColor.setHSL(hue % 1, 0.92, 0.58);
+    curveCol[i*3]     = tmpColor.r * fade;
+    curveCol[i*3 + 1] = tmpColor.g * fade;
+    curveCol[i*3 + 2] = tmpColor.b * fade;
+  }
+
+  curveGeo.attributes.position.needsUpdate = true;
+  curveGeo.attributes.color.needsUpdate = true;
+  curveGeo.computeBoundingSphere();
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   6.  PITCH-CLASS RING
+   ═══════════════════════════════════════════════════════════════ */
+
+function initRing() {
+  ringGroup = new THREE.Group();
+  scene.add(ringGroup);
+
+  /* base circle */
+  const torus = new THREE.Mesh(
+    new THREE.TorusGeometry(RING_RADIUS, 0.009, 6, 200),
+    new THREE.MeshBasicMaterial({ color: 0x22315a, transparent: true, opacity: 0.75 })
+  );
+  torus.rotation.x = -Math.PI / 2;
+  torus.position.y = RING_Y;
+  ringGroup.add(torus);
+
+  const innerTorus = new THREE.Mesh(
+    new THREE.TorusGeometry(RING_RADIUS * 0.62, 0.005, 5, 160),
+    new THREE.MeshBasicMaterial({ color: 0x18244a, transparent: true, opacity: 0.55 })
+  );
+  innerTorus.rotation.x = -Math.PI / 2;
+  innerTorus.position.y = RING_Y;
+  ringGroup.add(innerTorus);
+
+  /* chord polygon */
+  chordPos = new Float32Array(13 * 3);
+  const chordGeo = new THREE.BufferGeometry();
+  chordGeo.setAttribute('position', new THREE.BufferAttribute(chordPos, 3));
+  chordGeo.setDrawRange(0, 0);
+  chordLine = new THREE.Line(chordGeo, new THREE.LineBasicMaterial({
+    color: 0x6ee7ff, transparent: true, opacity: 0.55,
+    blending: THREE.AdditiveBlending, depthWrite: false
+  }));
+  ringGroup.add(chordLine);
+
+  /* nodes */
+  for (let pc = 0; pc < 12; pc++) {
+    const a = -Math.PI / 2 + pc * TAU / 12;
+    const x = Math.cos(a) * RING_RADIUS;
+    const z = Math.sin(a) * RING_RADIUS;
+    const hue = ((pc * 30 + 190) % 360) / 360;
+    const col = new THREE.Color().setHSL(hue, 0.85, 0.55);
+
+    const mesh = new THREE.Mesh(
+      new THREE.IcosahedronGeometry(0.135, 0),
+      new THREE.MeshBasicMaterial({ color: col })
+    );
+    mesh.position.set(x, RING_Y, z);
+    ringGroup.add(mesh);
+
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: glowTex, color: col, transparent: true, opacity: 0.35,
+      blending: THREE.AdditiveBlending, depthWrite: false
+    }));
+    glow.position.set(x, RING_Y, z);
+    glow.scale.set(1.15, 1.15, 1);
+    ringGroup.add(glow);
+
+    const lab = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: makeLabelTexture(NOTE_NAMES[pc], '#9fb0d8'),
+      transparent: true, opacity: 0.65,
+      blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false
+    }));
+    const lr = RING_RADIUS + 0.60;
+    lab.position.set(Math.cos(a) * lr, RING_Y + 0.12, Math.sin(a) * lr);
+    lab.scale.set(1.05, 0.525, 1);
+    ringGroup.add(lab);
+
+    ringNodes.push({ pc, mesh, glow, label: lab, hue, baseCol: col.clone() });
+  }
+}
+
+function updateRingVisuals(time) {
+  const counts = new Array(12).fill(0);
+  for (const midi of activeNotes.keys()) counts[((midi % 12) + 12) % 12]++;
+
+  for (const n of ringNodes) {
+    const on = counts[n.pc] > 0;
+    const pulse = on ? 1 + 0.22 * Math.sin(time * 5.2 + n.pc) : 1;
+
+    n.mesh.scale.setScalar(on ? 1.45 * pulse : 1);
+    n.mesh.material.color.copy(n.baseCol);
+    if (!on) n.mesh.material.color.multiplyScalar(0.55);
+
+    n.glow.material.opacity = on ? 0.85 * pulse : 0.28;
+    n.glow.scale.setScalar(on ? 2.15 * pulse : 1.05);
+
+    n.label.material.opacity = on ? 1.0 : 0.5;
+  }
+}
+
+function updateChordPolygon() {
+  const pcs = [...new Set([...activeNotes.keys()].map(m => ((m % 12) + 12) % 12))].sort((a, b) => a - b);
+  if (pcs.length < 2) { chordLine.geometry.setDrawRange(0, 0); return; }
+
+  for (let i = 0; i < pcs.length; i++) {
+    const a = -Math.PI / 2 + pcs[i] * TAU / 12;
+    chordPos[i*3]     = Math.cos(a) * (RING_RADIUS + 0.02);
+    chordPos[i*3 + 1] = RING_Y + 0.05;
+    chordPos[i*3 + 2] = Math.sin(a) * (RING_RADIUS + 0.02);
+  }
+  /* close the loop */
+  chordPos[pcs.length*3]     = chordPos[0];
+  chordPos[pcs.length*3 + 1] = chordPos[1];
+  chordPos[pcs.length*3 + 2] = chordPos[2];
+
+  chordLine.geometry.attributes.position.needsUpdate = true;
+  chordLine.geometry.setDrawRange(0, pcs.length + 1);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   7.  SPECTRUM RING
+   ═══════════════════════════════════════════════════════════════ */
+
+function initSpectrumRing() {
+  specGroup = new THREE.Group();
+  scene.add(specGroup);
+
+  const barGeo = new THREE.BoxGeometry(0.055, 1, 0.055);
+  barGeo.translate(0, 0.5, 0);
+
+  for (let i = 0; i < SPEC_N; i++) {
+    const a = (i / SPEC_N) * TAU;
+    const hue = ((i / SPEC_N) * 360 + 185) % 360 / 360;
+    const col = new THREE.Color().setHSL(hue, 0.85, 0.55);
+
+    const mat = new THREE.MeshBasicMaterial({
+      color: col, transparent: true, opacity: 0.9
+    });
+    const bar = new THREE.Mesh(barGeo, mat);
+    bar.position.set(Math.cos(a) * SPEC_R, SPEC_Y, Math.sin(a) * SPEC_R);
+    bar.scale.y = 0.05;
+    bar.userData.level = 0;
+    specGroup.add(bar);
+    specBars.push(bar);
+  }
+}
+
+function updateSpectrumRing() {
+  let data = null, binHz = 0;
+  if (audio && audio.analyser) {
+    audio.analyser.getByteFrequencyData(specData);
+    data = specData;
+    binHz = audio.ctx.sampleRate / audio.analyser.fftSize;
+  }
+
+  for (let i = 0; i < SPEC_N; i++) {
+    const bar = specBars[i];
+    let target = 0;
+
+    if (data) {
+      const f0 = 60 * Math.pow(8000 / 60, i / SPEC_N);
+      const f1 = 60 * Math.pow(8000 / 60, (i + 1) / SPEC_N);
+      let a0 = Math.floor(f0 / binHz);
+      let a1 = Math.max(a0 + 1, Math.ceil(f1 / binHz));
+      a1 = Math.min(a1, data.length);
+      let m = 0;
+      for (let k = a0; k < a1; k++) if (data[k] > m) m = data[k];
+      target = m / 255;
+    }
+
+    const cur = bar.userData.level;
+    const next = cur + (target - cur) * 0.28;
+    bar.userData.level = next;
+
+    const h = 0.06 + next * 1.85;
+    bar.scale.y = h;
+    bar.material.opacity = 0.30 + next * 0.85;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   8.  AUDIO ENGINE — additive synthesis via PeriodicWave
+   ═══════════════════════════════════════════════════════════════ */
+
+let audio = null;
+let specData = null;
+
+function makeImpulse(ctx, seconds, decay) {
+  const rate = ctx.sampleRate;
+  const len = Math.floor(rate * seconds);
+  const buf = ctx.createBuffer(2, len, rate);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = buf.getChannelData(ch);
+    let lp = 0;
+    for (let i = 0; i < len; i++) {
+      const n = Math.random() * 2 - 1;
+      lp = lp * 0.72 + n * 0.28;
+      d[i] = lp * Math.pow(1 - i / len, decay);
+    }
+  }
+  return buf;
+}
+
+function buildWave() {
+  if (!audio) return;
+  const H = 28;
+  const real = new Float32Array(H + 1);
+  const imag = new Float32Array(H + 1);
+
+  let s = 0;
+  for (let n = 1; n <= H; n++) s += 1 / Math.pow(n, state.brightness);
+  for (let n = 1; n <= H; n++) imag[n] = (1 / Math.pow(n, state.brightness)) / s;
+
+  audio.wave = audio.ctx.createPeriodicWave(real, imag, { disableNormalization: true });
+}
+
+function initAudio() {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  const ctx = new AC();
+
+  const master = ctx.createGain();
+  master.gain.value = 0.85;
+
+  const comp = ctx.createDynamicsCompressor();
+  comp.threshold.value = -20;
+  comp.knee.value = 22;
+  comp.ratio.value = 8;
+  comp.attack.value = 0.003;
+  comp.release.value = 0.25;
+
+  const analyser = ctx.createAnalyser();
+  analyser.fftSize = 4096;
+  analyser.smoothingTimeConstant = 0.72;
+
+  const conv = ctx.createConvolver();
+  conv.buffer = makeImpulse(ctx, 2.6, 2.5);
+  const wet = ctx.createGain();
+  wet.gain.value = 0.20;
+
+  master.connect(comp);
+  comp.connect(analyser);
+  comp.connect(conv);
+  conv.connect(wet);
+  wet.connect(analyser);
+  analyser.connect(ctx.destination);
+
+  audio = { ctx, master, analyser, wave: null };
+  specData = new Uint8Array(analyser.frequencyBinCount);
+  buildWave();
+}
+
+function ensureAudio() {
+  if (!audio) initAudio();
+  if (audio.ctx.state === 'suspended') audio.ctx.resume();
+}
+
+function noteOn(midi, vel = 1, fromPreset = false) {
+  ensureAudio();
+  if (!fromPreset && presetActive) clearPreset();
+  if (activeNotes.has(midi)) return;
+
+  const { ctx, master, wave } = audio;
+  const f = freqFor(midi);
+
+  const osc = ctx.createOscillator();
+  osc.setPeriodicWave(wave);
+  osc.frequency.setValueAtTime(f, ctx.currentTime);
+
+  const g = ctx.createGain();
+  const peak = 0.17 * vel;
+  g.gain.setValueAtTime(0.0001, ctx.currentTime);
+  g.gain.exponentialRampToValueAtTime(peak, ctx.currentTime + 0.014);
+
+  osc.connect(g);
+  g.connect(master);
+  osc.start();
+
+  activeNotes.set(midi, { osc, gain: g, freq: f });
+
+  const el = keyEls.get(midi);
+  if (el) el.classList.add('active');
+
+  onHarmonyChanged();
+}
+
+function noteOff(midi) {
+  const n = activeNotes.get(midi);
+  if (!n) return;
+  const { ctx } = audio;
+  const t = ctx.currentTime;
+
+  if (n.gain.gain.cancelAndHoldAtTime) {
+    n.gain.gain.cancelAndHoldAtTime(t);
+  } else {
+    n.gain.gain.cancelScheduledValues(t);
+    n.gain.gain.setValueAtTime(n.gain.gain.value || 0.0001, t);
+  }
+  n.gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+  try { n.osc.stop(t + 0.30); } catch (e) {}
+
+  activeNotes.delete(midi);
+  const el = keyEls.get(midi);
+  if (el) el.classList.remove('active');
+
+  onHarmonyChanged();
+}
+
+function releaseAll() {
+  for (const midi of [...activeNotes.keys()]) noteOff(midi);
+}
+
+function retuneAll() {
+  if (!audio) return;
+  const t = audio.ctx.currentTime;
+  for (const [midi, n] of activeNotes) {
+    n.freq = freqFor(midi);
+    n.osc.frequency.setTargetAtTime(n.freq, t, 0.012);
+  }
+  onHarmonyChanged();
+}
+
+function onHarmonyChanged() {
+  rebuildCurve();
+  updateChordPolygon();
+  updateReadout();
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   9.  READOUT
+   ═══════════════════════════════════════════════════════════════ */
+
+const readoutEl = document.getElementById('readout');
+
+function updateReadout() {
+  const notes = [...activeNotes.entries()].sort((a, b) => a[0] - b[0]);
+
+  if (!notes.length) {
+    readoutEl.innerHTML = '<div class="empty">play a note — previewing C major</div>';
+    return;
+  }
+
+  const f0 = notes[0][1].freq;
+  readoutEl.innerHTML = notes.map(([midi, n]) => {
+    const r = n.freq / f0;
+    const near = nearestRatio(r);
+    const oct = Math.floor(Math.log2(r));
+    const dev = 1200 * Math.log2(r / (near.value * Math.pow(2, oct)));
+    const sign = dev >= 0 ? '+' : '';
+    const ok = Math.abs(dev) < 1.2 ? 'ok' : '';
+    return `<div class="row">
+      <span class="nm">${noteName(midi)}</span>
+      <span class="fq">${n.freq.toFixed(2)}<i>Hz</i></span>
+      <span class="rt">${near.label}</span>
+      <span class="ct ${ok}">${sign}${dev.toFixed(1)}¢</span>
+    </div>`;
+  }).join('');
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   10.  KEYBOARD UI
+   ═══════════════════════════════════════════════════════════════ */
+
+const keysEl = document.getElementById('keys');
+const keyEls = new Map();
+
+const WHITE_SEMI = [0, 2, 4, 5, 7, 9, 11];
+const BLACK_SEMI = [1, 3, 6, 8, 10];
+const BLACK_AFTER = [0, 1, 3, 4, 5];
+const OCTAVES = 2;
+const BASE_MIDI = 48;
+const WHITE_N = OCTAVES * 7;
+
+function buildKeyboard() {
+  const wW = 100 / WHITE_N;
+
+  for (let o = 0; o < OCTAVES; o++) {
+    for (let j = 0; j < 7; j++) {
+      const midi = BASE_MIDI + o * 12 + WHITE_SEMI[j];
+      const el = document.createElement('div');
+      el.className = 'key white';
+      el.style.left = (o * 7 + j) * wW + '%';
+      el.style.width = wW + '%';
+      attachKey(el, midi);
+      keysEl.appendChild(el);
+      keyEls.set(midi, el);
+    }
+  }
+
+  const bW = wW * 0.62;
+  for (let o = 0; o < OCTAVES; o++) {
+    for (let b = 0; b < 5; b++) {
+      const midi = BASE_MIDI + o * 12 + BLACK_SEMI[b];
+      const leftIdx = o * 7 + BLACK_AFTER[b];
+      const el = document.createElement('div');
+      el.className = 'key black';
+      el.style.left = ((leftIdx + 1) * wW - bW / 2) + '%';
+      el.style.width = bW + '%';
+      attachKey(el, midi);
+      keysEl.appendChild(el);
+      keyEls.set(midi, el);
+    }
+  }
+}
+
+function attachKey(el, midi) {
+  el.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    el.setPointerCapture(e.pointerId);
+    noteOn(midi, 0.95);
+  });
+  const up = () => noteOff(midi);
+  el.addEventListener('pointerup', up);
+  el.addEventListener('pointercancel', up);
+  el.addEventListener('contextmenu', e => e.preventDefault());
+}
+
+/* computer keyboard */
+const KEYMAP = {
+  a: 0, w: 1, s: 2, e: 3, d: 4, f: 5, t: 6, g: 7, y: 8, h: 9, u: 10, j: 11,
+  k: 12, o: 13, l: 14, p: 15, ';': 16, "'": 17
+};
+const heldKeys = new Set();
+
+document.addEventListener('keydown', e => {
+  if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
+  const k = e.key.toLowerCase();
+  if (!(k in KEYMAP)) return;
+  e.preventDefault();
+  if (heldKeys.has(k)) return;
+  heldKeys.add(k);
+  noteOn(60 + KEYMAP[k], 0.95);
+});
+
+document.addEventListener('keyup', e => {
+  const k = e.key.toLowerCase();
+  if (!(k in KEYMAP)) return;
+  if (!heldKeys.has(k)) return;
+  heldKeys.delete(k);
+  noteOff(60 + KEYMAP[k]);
+});
+
+/* ═══════════════════════════════════════════════════════════════
+   11.  PRESETS
+   ═══════════════════════════════════════════════════════════════ */
+
+const PRESETS = [
+  { name: 'Major',    notes: [0, 4, 7] },
+  { name: 'Minor',    notes: [0, 3, 7] },
+  { name: 'Dom 7',    notes: [0, 4, 7, 10] },
+  { name: 'Sus 4',    notes: [0, 5, 7] },
+  { name: 'Harmonic', notes: [0, 12, 19, 24, 28] },
+  { name: 'Cluster',  notes: [0, 1, 2, 3] }
+];
+
+let presetActive = null;
+let presetNotes = [];
+
+const presetsEl = document.getElementById('presets');
+const presetBtns = new Map();
+
+PRESETS.forEach(p => {
+  const b = document.createElement('button');
+  b.textContent = p.name;
+  b.addEventListener('click', () => togglePreset(p));
+  presetsEl.appendChild(b);
+  presetBtns.set(p.name, b);
+});
+
+function togglePreset(p) {
+  if (presetActive === p.name) { clearPreset(); return; }
+  ensureAudio();
+  clearPreset();
+  presetActive = p.name;
+  presetNotes = p.notes.map(s => 60 + s);
+  for (const m of presetNotes) noteOn(m, 0.85, true);
+  updatePresetBtns();
+}
+
+function clearPreset() {
+  if (!presetActive) return;
+  for (const m of presetNotes) noteOff(m);
+  presetActive = null;
+  presetNotes = [];
+  updatePresetBtns();
+}
+
+function updatePresetBtns() {
+  for (const [name, b] of presetBtns) b.classList.toggle('active', name === presetActive);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   12.  CONTROLS
+   ═══════════════════════════════════════════════════════════════ */
+
+document.getElementById('tuning').addEventListener('click', e => {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+  const v = btn.dataset.v;
+  if (v === state.tuning) return;
+  state.tuning = v;
+  for (const b of document.querySelectorAll('#tuning button')) {
+    b.classList.toggle('active', b.dataset.v === v);
+  }
+  retuneAll();
+});
+
+const brightSlider = document.getElementById('bright');
+const brightVal = document.getElementById('brightVal');
+brightSlider.addEventListener('input', () => {
+  state.brightness = parseFloat(brightSlider.value);
+  brightVal.textContent = state.brightness.toFixed(2);
+  buildWave();
+  rebuildCurve();
+});
+
+/* ---- pointer: orbit + node picking ---- */
+const stageEl = document.getElementById('stage');
+let dragStart = null;
+
+stageEl.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  stageEl.setPointerCapture(e.pointerId);
+  dragging = true;
+  dragStart = { x: e.clientX, y: e.clientY, t: performance.now() };
+});
+
+stageEl.addEventListener('pointermove', e => {
+  if (!dragging || !dragStart) return;
+  const dx = e.clientX - dragStart.x;
+  const dy = e.clientY - dragStart.y;
+
+  camTheta -= dx * 0.0055;
+  camPhi -= dy * 0.0045;
+  camPhi = Math.max(0.28, Math.min(2.55, camPhi));
+
+  dragStart.x = e.clientX;
+  dragStart.y = e.clientY;
+});
+
+function endDrag(e) {
+  if (!dragging) return;
+  dragging = false;
+
+  const moved = Math.hypot(e.clientX - dragStart.x, e.clientY - dragStart.y);
+  const elapsed = performance.now() - dragStart.t;
+
+  if (moved < 7 && elapsed < 450) {
+    const hit = pickNode(e.clientX, e.clientY);
+    if (hit) {
+      const midi = 60 + hit.pc;
+      if (activeNotes.has(midi)) noteOff(midi); else noteOn(midi, 0.95);
+    }
+  }
+  dragStart = null;
+}
+
+stageEl.addEventListener('pointerup', endDrag);
+stageEl.addEventListener('pointercancel', () => { dragging = false; dragStart = null; });
+
+stageEl.addEventListener('wheel', e => {
+  e.preventDefault();
+  camDist *= 1 + e.deltaY * 0.0009;
+  camDist = Math.max(6.5, Math.min(24, camDist));
+}, { passive: false });
+
+const projVec = new THREE.Vector3();
+
+function pickNode(clientX, clientY) {
+  const rect = stageEl.getBoundingClientRect();
+  let best = null, bestD = 46;
+
+  for (const n of ringNodes) {
+    n.mesh.getWorldPosition(projVec);
+    projVec.project(camera);
+    const sx = (projVec.x * 0.5 + 0.5) * rect.width + rect.left;
+    const sy = (-projVec.y * 0.5 + 0.5) * rect.height + rect.top;
+    const d = Math.hypot(sx - clientX, sy - clientY);
+    if (d < bestD) { bestD = d; best = n; }
+  }
+  return best;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   13.  RESIZE
+   ═══════════════════════════════════════════════════════════════ */
+
+const specCanvas = document.getElementById('spec');
+const specCtx = specCanvas.getContext('2d');
+let SPEC_W = 1, SPEC_H = 1;
+
+function resize() {
+  const wrap = document.getElementById('stageWrap');
+  const w = Math.max(2, wrap.clientWidth);
+  const h = Math.max(2, wrap.clientHeight);
+
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+
+  if (composer) composer.setSize(w, h);
+  if (bloomPass) bloomPass.setSize(w, h);
+
+  /* mini spectrum canvas */
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const r = specCanvas.getBoundingClientRect();
+  SPEC_W = Math.max(1, Math.round(r.width));
+  SPEC_H = Math.max(1, Math.round(r.height));
+  specCanvas.width = Math.round(SPEC_W * dpr);
+  specCanvas.height = Math.round(SPEC_H * dpr);
+  specCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   14.  MINI SPECTRUM PANEL
+   ═══════════════════════════════════════════════════════════════ */
+
+const F_MIN = 60, F_MAX = 8000;
+
+function drawMiniSpectrum() {
+  const c = specCtx;
+  c.clearRect(0, 0, SPEC_W, SPEC_H);
+
+  const xOf = f => (Math.log(f / F_MIN) / Math.log(F_MAX / F_MIN)) * SPEC_W;
+
+  c.strokeStyle = 'rgba(120,150,220,0.09)';
+  c.lineWidth = 1;
+  c.font = '9px ui-monospace,monospace';
+  c.fillStyle = 'rgba(140,160,220,0.42)';
+  c.textAlign = 'left';
+  c.textBaseline = 'alphabetic';
+
+  for (const f of [100, 250, 500, 1000, 2000, 4000, 8000]) {
+    const x = Math.round(xOf(f)) + 0.5;
+    c.beginPath(); c.moveTo(x, 0); c.lineTo(x, SPEC_H - 13); c.stroke();
+    c.fillText(f >= 1000 ? (f / 1000) + 'k' : String(f), x + 3, SPEC_H - 3);
+  }
+
+  if (!audio || !specData) return;
+  audio.analyser.getByteFrequencyData(specData);
+
+  const binHz = audio.ctx.sampleRate / audio.analyser.fftSize;
+  const B = 100;
+  const vals = new Float32Array(B);
+
+  for (let b = 0; b < B; b++) {
+    const f0 = F_MIN * Math.pow(F_MAX / F_MIN, b / B);
+    const f1 = F_MIN * Math.pow(F_MAX / F_MIN, (b + 1) / B);
+    let i0 = Math.floor(f0 / binHz);
+    let i1 = Math.max(i0 + 1, Math.ceil(f1 / binHz));
+    i1 = Math.min(i1, specData.length);
+    let m = 0;
+    for (let i = i0; i < i1; i++) if (specData[i] > m) m = specData[i];
+    vals[b] = m / 255;
+  }
+
+  const baseY = SPEC_H - 14;
+  const topY = 6;
+
+  c.beginPath();
+  c.moveTo(0, baseY);
+  for (let b = 0; b < B; b++) {
+    const x = (b + 0.5) / B * SPEC_W;
+    const y = baseY - vals[b] * (baseY - topY);
+    c.lineTo(x, y);
+  }
+  c.lineTo(SPEC_W, baseY);
+  c.closePath();
+
+  const g = c.createLinearGradient(0, topY, 0, baseY);
+  g.addColorStop(0, 'rgba(110,231,255,0.80)');
+  g.addColorStop(0.55, 'rgba(140,180,255,0.35)');
+  g.addColorStop(1, 'rgba(167,139,250,0.04)');
+  c.fillStyle = g;
+  c.fill();
+
+  c.beginPath();
+  for (let b = 0; b < B; b++) {
+    const x = (b + 0.5) / B * SPEC_W;
+    const y = baseY - vals[b] * (baseY - topY);
+    if (b === 0) c.moveTo(x, y); else c.lineTo(x, y);
+  }
+  c.strokeStyle = 'rgba(190,248,255,0.92)';
+  c.lineWidth = 1.2;
+  c.stroke();
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   15.  RENDER LOOP
+   ═══════════════════════════════════════════════════════════════ */
+
+let prevTime = 0;
+let time = 0;
+let specAccum = 0;
+
+function tick(now) {
+  requestAnimationFrame(tick);
+
+  const dt = Math.min(0.05, (now - prevTime) / 1000 || 0);
+  prevTime = now;
+  time += dt;
+
+  /* camera orbit */
+  if (!dragging) camTheta += dt * 0.045;
+
+  const sp = Math.sin(camPhi), cp = Math.cos(camPhi);
+  camera.position.set(
+    camDist * sp * Math.cos(camTheta),
+    camDist * cp,
+    camDist * sp * Math.sin(camTheta)
+  );
+  camera.lookAt(0, 0.05, 0);
+
+  /* slow spin + gentle tilt so the 3D nesting reads from every angle */
+  if (curveGroup) {
+    curveGroup.rotation.y = time * 0.10;
+    curveGroup.rotation.x = Math.sin(time * 0.17) * 0.13;
+  }
+
+  /* travelling head along the curve */
+  if (curvePos && headSprite) {
+    const t = (time * 0.085) % 1;
+    const idx = Math.min(CURVE_N - 1, Math.floor(t * (CURVE_N - 1)));
+    const hx = curvePos[idx*3], hy = curvePos[idx*3+1], hz = curvePos[idx*3+2];
+    headSprite.position.set(hx, hy, hz);
+    headCore.position.set(hx, hy, hz);
+    const pulse = 1 + 0.18 * Math.sin(time * 9);
+    headSprite.scale.set(1.55 * pulse, 1.55 * pulse, 1);
+  }
+
+  /* rings */
+  updateRingVisuals(time);
+  updateSpectrumRing();
+
+  /* stars drift */
+  if (starField) starField.rotation.y = time * 0.008;
+
+  /* panel spectrum at ~20 fps */
+  specAccum += dt;
+  if (specAccum > 0.05) { specAccum = 0; drawMiniSpectrum(); }
+
+  if (composer) composer.render();
+  else renderer.render(scene, camera);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   16.  BOOT
+   ═══════════════════════════════════════════════════════════════ */
+
+try {
+  initThree();
+  initCurve();
+  initRing();
+  initSpectrumRing();
+
+  buildKeyboard();
+  resize();
+  rebuildCurve();
+  updateChordPolygon();
+  updateReadout();
+
+  const ro = new ResizeObserver(() => resize());
+  ro.observe(document.getElementById('stageWrap'));
+  ro.observe(specCanvas);
+
+  window.addEventListener('blur', () => {
+    heldKeys.clear();
+    releaseAll();
+    clearPreset();
+  });
+
+  requestAnimationFrame(tick);
+} catch (err) {
+  console.error(err);
+  const f = document.getElementById('fatal');
+  f.style.display = 'grid';
+  f.textContent = 'WebGL could not start on this device — ' + (err && err.message ? err.message : 'unknown error');
+}
+
+})();
+</script>
+</body>
+</html>
