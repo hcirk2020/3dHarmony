@@ -2,8 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>Harmonic Geometry 3D — An Interactive Model of Music</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="An interactive 3D exploration of harmonic interval ratios, nested Lissajous contours, tuning, and chord geometry.">
+<title>Harmonic Geometry — Nested Ratio Explorer</title>
 <style>
   :root{
     --bg:#04050a;
@@ -102,6 +103,15 @@
   .row .ct.ok{color:#5ee2a0}
   .empty{font-size:11.5px;color:var(--dim);padding:8px 0;line-height:1.5}
 
+  .geometry-card{margin-top:9px;padding:11px 10px 10px;border:1px solid rgba(120,150,220,.13);border-radius:9px;background:linear-gradient(145deg,rgba(16,24,44,.72),rgba(7,9,19,.72));}
+  .geom-top{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:9px;letter-spacing:.17em;color:var(--dim);}
+  .geom-top strong{font-size:10px;letter-spacing:.06em;color:#74f0d0;font-variant-numeric:tabular-nums;}
+  .geom-label{font-size:13px;font-weight:650;letter-spacing:.01em;color:#e6f5ff;margin-top:7px;}
+  .geom-desc{font-size:10.5px;color:#8f9fc8;line-height:1.5;margin-top:5px;}
+  .ratio-chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:9px;}
+  .ratio-chip{font-size:9.5px;line-height:1.4;color:#bac8e7;border:1px solid rgba(130,155,220,.18);background:rgba(120,150,220,.07);border-radius:5px;padding:3px 5px;white-space:nowrap;font-variant-numeric:tabular-nums;}
+  .ratio-chip b{color:#eaf8ff;font-weight:650;}
+
   .segmented{display:flex;gap:6px;background:rgba(120,150,220,.06);padding:4px;border-radius:9px}
   .segmented button{
     flex:1;border:none;background:transparent;color:var(--dim);
@@ -163,7 +173,7 @@
 <body>
 <div id="app">
   <div id="stageWrap">
-    <canvas id="stage"></canvas>
+    <canvas id="stage" aria-label="Interactive 3D visualization of harmonic interval ratios. Drag to orbit and click pitch-class nodes to toggle notes."></canvas>
     <div id="keysWrap"><div id="keys"></div></div>
     <div id="fatal">WebGL could not start on this device.</div>
   </div>
@@ -171,7 +181,7 @@
   <aside id="panel">
     <header>
       <h1>Harmonic Geometry 3D</h1>
-      <p class="sub">Pitch, timbre &amp; tuning projected into three dimensions.</p>
+      <p class="sub">Low-integer ratios form clear nested lobes; more complex intervals weave into denser interference. JI uses a fixed C-referenced scale.</p>
     </header>
 
     <section>
@@ -182,13 +192,19 @@
     <section>
       <div class="sec-title">Sounding</div>
       <div id="readout"><div class="empty">play a note — previewing C major</div></div>
+      <div id="geometryReadout" class="geometry-card" aria-live="polite">
+        <div class="geom-top"><span>RATIO SIMPLICITY</span><strong id="geometryScore">—</strong></div>
+        <div id="geometryLabel" class="geom-label">Nested harmonic contours</div>
+        <div id="geometryDesc" class="geom-desc">Each interval adds a ratio-shaped orbit.</div>
+        <div id="ratioChips" class="ratio-chips"></div>
+      </div>
     </section>
 
     <section>
       <div class="sec-title">Tuning system</div>
       <div class="segmented" id="tuning">
         <button data-v="et" class="active">12-TET</button>
-        <button data-v="ji">Just Intonation</button>
+        <button data-v="ji" title="Fixed just-intonation ratios referenced to C">C-based JI</button>
       </div>
     </section>
 
@@ -203,8 +219,11 @@
     </section>
 
     <footer>
-      Drag to orbit · scroll to zoom · click a node on the ring to toggle that pitch class.
-      Keys <kbd>A</kbd>–<kbd>K</kbd> play notes.
+      Drag to orbit · scroll to zoom · click a ring node to toggle that pitch class across octaves.
+      Computer keys map chromatically: <kbd>A</kbd> <kbd>W</kbd> <kbd>S</kbd> <kbd>E</kbd> <kbd>D</kbd> <kbd>F</kbd> <kbd>T</kbd> <kbd>G</kbd> <kbd>Y</kbd> <kbd>H</kbd> <kbd>U</kbd> <kbd>J</kbd> = C4–B4; <kbd>K</kbd> <kbd>O</kbd> <kbd>L</kbd> <kbd>P</kbd> <kbd>;</kbd> <kbd>'</kbd> = C5–F5.<br>
+      Each thin contour is one interval: <b style="color:#8ab4ff">dim line</b> = ideal ratio,
+      <b style="color:#5ee2a0">bright line</b> = sounding ratio. Simple ratios make cleaner lobes;
+      high-order ratios create tighter crossings.
     </footer>
   </aside>
 </div>
@@ -218,6 +237,8 @@
 <script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
 
 <script>
+// Harmonic Geometry — Nested Ratio Explorer
+// Single-file visualization; Three.js r128 is loaded from the pinned CDN URLs above.
 (() => {
 'use strict';
 
@@ -230,11 +251,29 @@ const TAU = Math.PI * 2;
 const NOTE_NAMES = ['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'];
 
 const JI_RATIOS = [1/1, 16/15, 9/8, 6/5, 5/4, 4/3, 45/32, 3/2, 8/5, 5/3, 9/5, 15/8];
+// Canonical low-integer interval targets, indexed by semitones above the lowest note.
+// They define the ideal guide contours; the brighter contours use the actual tuned frequencies.
+const HARMONIC_INTERVALS = [
+  { p: 1,  q: 1,  label: '1:1'   },
+  { p: 16, q: 15, label: '16:15' },
+  { p: 9,  q: 8,  label: '9:8'   },
+  { p: 6,  q: 5,  label: '6:5'   },
+  { p: 5,  q: 4,  label: '5:4'   },
+  { p: 4,  q: 3,  label: '4:3'   },
+  { p: 45, q: 32, label: '45:32' },
+  { p: 3,  q: 2,  label: '3:2'   },
+  { p: 8,  q: 5,  label: '8:5'   },
+  { p: 5,  q: 3,  label: '5:3'   },
+  { p: 9,  q: 5,  label: '9:5'   },
+  { p: 15, q: 8,  label: '15:8'  }
+];
 const JI_ROOT_MIDI = 60;
 const JI_ROOT_FREQ = 440 * Math.pow(2, (JI_ROOT_MIDI - 69) / 12);
 
 const state = { tuning: 'et', brightness: 1.4 };
 const activeNotes = new Map();
+let harmonyBatchDepth = 0;
+let harmonyPending = false;
 
 function freqFor(midi) {
   if (state.tuning === 'et') return 440 * Math.pow(2, (midi - 69) / 12);
@@ -252,10 +291,10 @@ function gcd(a, b) { while (b) { [a, b] = [b, a % b]; } return a; }
 
 const RATIO_TABLE = (() => {
   const seen = new Set(), out = [];
-  for (let q = 1; q <= 16; q++) {
+  for (let q = 1; q <= 32; q++) {
     for (let p = q; p <= q * 2; p++) {
       const g = gcd(p, q), pp = p / g, qq = q / g;
-      if (qq > 16 || pp >= 2 * qq) continue;
+      if (qq > 32 || pp >= 2 * qq) continue;
       const key = pp + ':' + qq;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -283,16 +322,7 @@ function nearestRatio(r) {
 
 let renderer, scene, camera, composer, bloomPass;
 let glowTex = null;
-
-let curveGroup, curveGeo, curveLine, curvePoints, curvePoints2;
-let curvePos, curveCol;
-const CURVE_N = 1600;
-const rxBuf = new Float64Array(CURVE_N);
-const ryBuf = new Float64Array(CURVE_N);
-const rzBuf = new Float64Array(CURVE_N);
 const tmpColor = new THREE.Color();
-
-let headSprite, headCore;
 
 let ringGroup, ringNodes = [], chordLine, chordPos;
 
@@ -366,7 +396,6 @@ function initThree() {
 
   glowTex = makeGlowTexture();
 
-  /* ---- bloom ---- */
   if (typeof THREE.EffectComposer !== 'undefined' && typeof THREE.UnrealBloomPass !== 'undefined') {
     try {
       composer = new THREE.EffectComposer(renderer);
@@ -378,7 +407,7 @@ function initThree() {
     }
   }
 
-  /* ---- stars ---- */
+  /* stars */
   const starCount = 1400;
   const sPos = new Float32Array(starCount * 3);
   for (let i = 0; i < starCount; i++) {
@@ -397,7 +426,7 @@ function initThree() {
   }));
   scene.add(starField);
 
-  /* ---- ground grid ---- */
+  /* ground grid */
   gridHelper = new THREE.PolarGridHelper(9.6, 8, 6, 96, 0x17233f, 0x0d1529);
   gridHelper.position.y = -2.55;
   gridHelper.material.transparent = true;
@@ -407,173 +436,379 @@ function initThree() {
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   5.  THE HARMONIC KNOT  (nested 3D harmonic sum)
+   5.  NESTED HARMONIC PORTRAIT
+   ═══════════════════════════════════════════════════════════════
+
+   Each interval becomes a Lissajous contour: X cycles at q, Z at p,
+   where p:q is its nearest canonical integer-ratio target. The bright
+   contour uses the measured tuned ratio; the dim contour is the ideal.
+   The composite center path sums the interval contours into one weave.
    ═══════════════════════════════════════════════════════════════ */
 
-function initCurve() {
-  curveGroup = new THREE.Group();
-  curveGroup.position.y = 0.50;          // float the knot above the ring plane
-  scene.add(curveGroup);
+const MAX_LOOP_N = 6000;
+const TRAIL_LEN = 160;
+const LOOP_BASE_Y = 0.9;
 
-  curvePos = new Float32Array(CURVE_N * 3);
-  curveCol = new Float32Array(CURVE_N * 3);
+let loopGroup, loopGeo, loopLine, loopPoints, loopPointsHalo;
+let loopPosArr, loopColArr, loopN = 0;
+let loopClosed = false, loopK = 1, loopPeriod = 8;
+let ratioLayerObjects = [];
+let lastGeometryProfile = null;
 
-  curveGeo = new THREE.BufferGeometry();
-  curveGeo.setAttribute('position', new THREE.BufferAttribute(curvePos, 3));
-  curveGeo.setAttribute('color', new THREE.BufferAttribute(curveCol, 3));
+let trailGeo, trailPoints, trailPosArr, trailColArr;
 
-  /* thin luminous core line */
-  curveLine = new THREE.Line(curveGeo, new THREE.LineBasicMaterial({
-    vertexColors: true, transparent: true, opacity: 1,
+let headSprite, headCore;
+
+function initLoop() {
+  loopGroup = new THREE.Group();
+  scene.add(loopGroup);
+
+  loopPosArr = new Float32Array(MAX_LOOP_N * 3);
+  loopColArr = new Float32Array(MAX_LOOP_N * 3);
+
+  loopGeo = new THREE.BufferGeometry();
+  loopGeo.setAttribute('position', new THREE.BufferAttribute(loopPosArr, 3));
+  loopGeo.setAttribute('color', new THREE.BufferAttribute(loopColArr, 3));
+  loopGeo.setDrawRange(0, 0);
+
+  loopLine = new THREE.Line(loopGeo, new THREE.LineBasicMaterial({
+    vertexColors: true, transparent: true, opacity: 0.55,
     blending: THREE.AdditiveBlending, depthWrite: false
   }));
-  curveGroup.add(curveLine);
+  loopGroup.add(loopLine);
 
-  /* main particle thread */
-  curvePoints = new THREE.Points(curveGeo, new THREE.PointsMaterial({
-    size: 0.085, map: glowTex, sizeAttenuation: true, vertexColors: true,
-    transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending,
-    depthWrite: false, alphaTest: 0.01
+  loopPointsHalo = new THREE.Points(loopGeo, new THREE.PointsMaterial({
+    size: 0.30, map: glowTex, vertexColors: true, transparent: true,
+    opacity: 0.10, blending: THREE.AdditiveBlending, depthWrite: false,
+    sizeAttenuation: true
   }));
-  curveGroup.add(curvePoints);
+  loopGroup.add(loopPointsHalo);
 
-  /* soft halo */
-  curvePoints2 = new THREE.Points(curveGeo, new THREE.PointsMaterial({
-    size: 0.34, map: glowTex, sizeAttenuation: true, vertexColors: true,
-    transparent: true, opacity: 0.13, blending: THREE.AdditiveBlending,
-    depthWrite: false
+  loopPoints = new THREE.Points(loopGeo, new THREE.PointsMaterial({
+    size: 0.075, map: glowTex, vertexColors: true, transparent: true,
+    opacity: 0.78, blending: THREE.AdditiveBlending, depthWrite: false,
+    sizeAttenuation: true, alphaTest: 0.01
   }));
-  curveGroup.add(curvePoints2);
+  loopGroup.add(loopPoints);
 
-  /* travelling head */
+  /* trail */
+  trailPosArr = new Float32Array(TRAIL_LEN * 3);
+  trailColArr = new Float32Array(TRAIL_LEN * 3);
+  trailGeo = new THREE.BufferGeometry();
+  trailGeo.setAttribute('position', new THREE.BufferAttribute(trailPosArr, 3));
+  trailGeo.setAttribute('color', new THREE.BufferAttribute(trailColArr, 3));
+  trailGeo.setDrawRange(0, 0);
+
+  trailPoints = new THREE.Points(trailGeo, new THREE.PointsMaterial({
+    size: 0.105, map: glowTex, vertexColors: true, transparent: true,
+    opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false,
+    sizeAttenuation: true
+  }));
+  loopGroup.add(trailPoints);
+
+  /* head */
   headSprite = new THREE.Sprite(new THREE.SpriteMaterial({
-    map: glowTex, color: 0xcaf5ff, transparent: true,
+    map: glowTex, color: 0xd8faff, transparent: true,
     blending: THREE.AdditiveBlending, depthWrite: false
   }));
-  headSprite.scale.set(1.55, 1.55, 1);
-  curveGroup.add(headSprite);
+  headSprite.scale.set(1.30, 1.30, 1);
+  loopGroup.add(headSprite);
 
   headCore = new THREE.Sprite(new THREE.SpriteMaterial({
     map: glowTex, color: 0xffffff, transparent: true,
     blending: THREE.AdditiveBlending, depthWrite: false
   }));
-  headCore.scale.set(0.42, 0.42, 1);
-  curveGroup.add(headCore);
+  headCore.scale.set(0.38, 0.38, 1);
+  loopGroup.add(headCore);
 }
 
-/**
- *  The harmonic sum lives on the complex plane:
- *
- *      S(τ) = Σ aₙ e^{i ωₙ τ}   =   Σ aₙ cos(ωₙ τ)  +  i Σ aₙ sin(ωₙ τ)
- *                                   \_____ x _____/     \_____ z _____/
- *
- *  Its real & imaginary parts are the familiar nested rosette.  To lift the
- *  rosette into space without losing the self-nesting, the vertical axis is
- *  driven by the *doubled* harmonic family — the same partials, wound twice
- *  as fast.  Every projection of the result is still a harmonic sum, so the
- *  nested loops survive from every viewing angle:
- *
- *      x(τ) = Σ aₙ cos(ωₙ τ)
- *      y(τ) = Σ aₙ sin(2ωₙ τ)      ← the "lift"
- *      z(τ) = Σ aₙ sin(ωₙ τ)
- */
-function rebuildCurve() {
-  if (!curveGeo) return;
+/** Return the smallest k ≤ 16 for which every ratio·k is within tolerance of an integer. */
+function analyzeRatios(ratios) {
+  const K_MAX = 16;
+  const TOL = 0.015;
 
-  const entries = [...activeNotes.entries()]
+  for (let k = 1; k <= K_MAX; k++) {
+    let maxErr = 0;
+    for (const r of ratios) {
+      const x = r * k;
+      const e = Math.abs(x - Math.round(x));
+      if (e > maxErr) maxErr = e;
+    }
+    if (maxErr < TOL) return { k, closed: true, residual: maxErr };
+  }
+
+  let maxErr = 0;
+  for (const r of ratios) {
+    const x = r * K_MAX;
+    const e = Math.abs(x - Math.round(x));
+    if (e > maxErr) maxErr = e;
+  }
+  return { k: K_MAX, closed: false, residual: maxErr };
+}
+
+function currentNoteList() {
+  const list = [...activeNotes.entries()]
     .map(([midi, n]) => ({ midi, freq: n.freq }))
     .sort((a, b) => a.freq - b.freq);
 
-  /* visual preview while silent: C major */
-  const list = entries.length ? entries : [
+  if (list.length) return list;
+
+  /* silent preview: C major in the active tuning */
+  return [
     { midi: 60, freq: freqFor(60) },
     { midi: 64, freq: freqFor(64) },
     { midi: 67, freq: freqFor(67) }
   ];
-  const fRef = list[0].freq;
+}
 
-  /* ---- partial set ---- */
-  const parts = [];
-  for (const nte of list) {
-    const ratio = nte.freq / fRef;
-    for (let h = 1; h <= 16; h++) {
-      const w = ratio * h;
-      if (w > 48) break;
-      const a = 1 / Math.pow(h, state.brightness);
-      if (a < 0.008) break;
-      parts.push(w, a);
+function intervalColor(complexity, cents) {
+  // Shape complexity sets the base hue; tuning offset nudges it toward amber.
+  let hue = complexity <= 7 ? 0.43 : complexity <= 12 ? 0.54 : complexity <= 24 ? 0.72 : 0.055;
+  if (Math.abs(cents) > 8) hue = hue * 0.68 + 0.075 * 0.32;
+  const c = new THREE.Color();
+  c.setHSL((hue + 1) % 1, 0.88, 0.60);
+  return c;
+}
+
+function clearRatioLayers() {
+  for (const item of ratioLayerObjects) {
+    loopGroup.remove(item.idealLine);
+    loopGroup.remove(item.actualLine);
+    item.idealLine.geometry.dispose();
+    item.actualLine.geometry.dispose();
+    item.idealLine.material.dispose();
+    item.actualLine.material.dispose();
+  }
+  ratioLayerObjects = [];
+}
+
+function makeContourLine(points, color, opacity, width = 1) {
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
+  const mat = new THREE.LineBasicMaterial({
+    color, transparent: true, opacity, linewidth: width,
+    blending: THREE.AdditiveBlending, depthWrite: false
+  });
+  return new THREE.Line(geo, mat);
+}
+
+function describeGeometry(score, maxComplexity, avgCents, count) {
+  if (count <= 1) return {
+    label: 'Single-ratio orbit',
+    desc: 'One pitch gives a simple circular 1:1 orbit. Add notes to reveal interval relationships.'
+  };
+  if (maxComplexity >= 28 || score < 48) return {
+    label: 'Dense interference',
+    desc: 'High-order ratios add many lobes and crossings. The dim guide shows the nearest ideal ratio; the bright path shows the tuned interval.'
+  };
+  if (score >= 77) return {
+    label: 'Clear nested shapes',
+    desc: 'Mostly low-integer ratios make the contours repeat in recognizable lobes. A small gap between guides shows temperament offset.'
+  };
+  return {
+    label: 'Layered harmonic weave',
+    desc: 'Some intervals have compact ratios while others need finer subdivisions, producing a mix of clean loops and tighter crossings.'
+  };
+}
+
+function updateGeometryReadout(intervals, score, maxComplexity, avgCents) {
+  const scoreEl = document.getElementById('geometryScore');
+  const labelEl = document.getElementById('geometryLabel');
+  const descEl = document.getElementById('geometryDesc');
+  const chipsEl = document.getElementById('ratioChips');
+  if (!scoreEl || !labelEl || !descEl || !chipsEl) return;
+
+  const copy = describeGeometry(score, maxComplexity, avgCents, intervals.length);
+  scoreEl.textContent = Math.round(score) + ' / 100';
+  scoreEl.style.color = score >= 77 ? '#74f0d0' : score >= 48 ? '#c3a6ff' : '#ffb477';
+  labelEl.textContent = copy.label;
+  const tuningText = intervals.length > 1 ? ` Mean offset from the ideal ratios: ${avgCents.toFixed(1)}¢.` : '';
+  descEl.textContent = copy.desc + tuningText;
+  chipsEl.innerHTML = intervals.map((item, i) => {
+    const cents = Math.abs(item.cents) < 0.05 ? 'aligned' : `${item.cents > 0 ? '+' : ''}${item.cents.toFixed(1)}¢`;
+    const label = i === 0 ? `${noteName(item.midi)} · root` : `${noteName(item.midi)} · ${item.ideal.label}`;
+    return `<span class="ratio-chip"><b>${label}</b> ${cents}</span>`;
+  }).join('');
+}
+
+function buildLoop() {
+  if (!loopGeo) return;
+
+  const notes = currentNoteList();
+  const f0 = notes[0].freq;
+  const rootMidi = notes[0].midi;
+
+  // Reduce each note to its interval class from the bass. Register is shown as a
+  // slight vertical separation, while octave-equivalent pitches share a ratio shape.
+  const intervals = notes.map((note, index) => {
+    const delta = Math.max(0, note.midi - rootMidi);
+    const octave = Math.floor(delta / 12);
+    const semis = ((delta % 12) + 12) % 12;
+    const ideal = HARMONIC_INTERVALS[semis];
+    const actualRatio = (note.freq / f0) / Math.pow(2, octave);
+    const cents = 1200 * Math.log2(Math.max(actualRatio, 1e-9) / (ideal.p / ideal.q));
+    return {
+      midi: note.midi, freq: note.freq, index, octave, semis, ideal,
+      actualRatio, actualP: actualRatio * ideal.q,
+      cents, complexity: ideal.p + ideal.q
+    };
+  });
+
+  const evaluated = intervals.slice(1);
+  const ratioScores = evaluated.map(item => 100 * Math.exp(-(item.complexity - 2) / 32));
+  const profileScore = ratioScores.length ? ratioScores.reduce((a, b) => a + b, 0) / ratioScores.length : 100;
+  const maxComplexity = intervals.reduce((m, item) => Math.max(m, item.complexity), 2);
+  const avgCents = evaluated.length ? evaluated.reduce((sum, item) => sum + Math.abs(item.cents), 0) / evaluated.length : 0;
+  lastGeometryProfile = { intervals, score: profileScore, maxComplexity, avgCents };
+  updateGeometryReadout(intervals, profileScore, maxComplexity, avgCents);
+
+  // Exact closure is still reported by the moving head, but visual complexity is
+  // now driven by the interval ratios rather than treating all tempered chords alike.
+  const ana = analyzeRatios(intervals.map(item => item.actualRatio));
+  loopClosed = ana.closed;
+  loopK = ana.k;
+
+  const maxMode = intervals.reduce((m, item) => Math.max(m, item.ideal.p, item.ideal.q, item.actualP), 1);
+  const N = Math.min(MAX_LOOP_N, Math.max(1400, Math.ceil(maxMode * 105)));
+  loopPeriod = 6.6 + Math.min(maxMode, 45) * 0.065 + (loopClosed ? 0 : 1.0);
+
+  // The composite path is an interference sum. The p:q contour of each interval
+  // is also drawn separately below so its nesting pattern remains identifiable.
+  const amps = intervals.map((item, i) => i === 0 ? 1.0 : 0.68 / Math.sqrt(i));
+  const raw = new Float32Array(N * 3);
+  let maxR = 0;
+  for (let i = 0; i < N; i++) {
+    const t = TAU * i / (N - 1);
+    let x = 0, y = 0, z = 0;
+    for (let j = 0; j < intervals.length; j++) {
+      const item = intervals[j];
+      const amp = amps[j];
+      const q = item.ideal.q;
+      const p = item.actualP;
+      // q cycles on X and the measured p cycles on Z: a just ratio closes exactly;
+      // an equal-tempered offset gently separates it from its ideal guide.
+      x += amp * Math.cos(q * t);
+      z += amp * Math.sin(p * t);
+      y += amp * Math.sin((p - q) * t) * 0.26;
     }
+    raw[i*3] = x; raw[i*3+1] = y; raw[i*3+2] = z;
+    const r = Math.hypot(x, z);
+    if (r > maxR) maxR = r;
   }
 
-  rxBuf.fill(0);
-  ryBuf.fill(0);
-  rzBuf.fill(0);
+  const targetR = 2.72;
+  const scaleXZ = targetR / Math.max(maxR, 1e-6);
+  const yAmp = 1.05 / Math.max(1, Math.sqrt(intervals.length) * 0.72);
+  const hue1 = profileScore >= 77 ? 0.47 : profileScore >= 48 ? 0.68 : 0.075;
+  const hue2 = profileScore >= 77 ? 0.78 : profileScore >= 48 ? 0.82 : 0.93;
 
-  const dTau = TAU / (CURVE_N - 1);
+  for (let i = 0; i < N; i++) {
+    const t = i / (N - 1);
+    loopPosArr[i*3] = raw[i*3] * scaleXZ;
+    loopPosArr[i*3+1] = LOOP_BASE_Y + raw[i*3+1] * yAmp;
+    loopPosArr[i*3+2] = raw[i*3+2] * scaleXZ;
 
-  for (let k = 0; k < parts.length; k += 2) {
-    const w = parts[k], a = parts[k + 1];
+    const fade = loopClosed ? 1 : (0.30 + 0.70 * Math.sin(t * Math.PI));
+    const hue = hue1 + (hue2 - hue1) * t;
+    tmpColor.setHSL((hue + 1) % 1, 0.88, 0.60);
+    loopColArr[i*3] = tmpColor.r * fade;
+    loopColArr[i*3+1] = tmpColor.g * fade;
+    loopColArr[i*3+2] = tmpColor.b * fade;
+  }
 
-    /* planar family  e^{i ω τ} */
-    const th = w * dTau;
-    const cth = Math.cos(th), sth = Math.sin(th);
-    let cr = 1, ci = 0;
+  loopN = N;
+  loopGeo.setDrawRange(0, N);
+  loopGeo.attributes.position.needsUpdate = true;
+  loopGeo.attributes.color.needsUpdate = true;
+  loopGeo.computeBoundingSphere();
 
-    /* vertical family  e^{i 2ω τ}  — same partials, doubled winding */
-    const th2 = 2 * th;
-    const cth2 = Math.cos(th2), sth2 = Math.sin(th2);
-    let cr2 = 1, ci2 = 0;
+  // Clean up prior interval layers, then build nested ideal-vs-sounding contours.
+  clearRatioLayers();
+  intervals.forEach((item, index) => {
+    const p = item.ideal.p;
+    const q = item.ideal.q;
+    const actualP = item.actualP;
+    const complexity = item.complexity;
+    const count = Math.min(3300, Math.max(440, Math.ceil(Math.max(p, q, actualP) * 62)));
+    const radius = Math.max(0.72, 2.48 - index * 0.17);
+    const layerY = LOOP_BASE_Y + (item.octave * 0.17) + (index - (intervals.length - 1) / 2) * 0.045;
+    const idealPts = new Float32Array(count * 3);
+    const actualPts = new Float32Array(count * 3);
 
-    for (let i = 0; i < CURVE_N; i++) {
-      rxBuf[i] += a * cr;      // Σ a cos(ωτ)
-      ryBuf[i] += a * ci;      // Σ a sin(ωτ)
-      rzBuf[i] += a * ci2;     // Σ a sin(2ωτ)
-
-      const nr = cr * cth - ci * sth;
-      ci = cr * sth + ci * cth;
-      cr = nr;
-
-      const nr2 = cr2 * cth2 - ci2 * sth2;
-      ci2 = cr2 * sth2 + ci2 * cth2;
-      cr2 = nr2;
+    for (let i = 0; i < count; i++) {
+      const t = TAU * i / (count - 1);
+      const ix = radius * Math.cos(q * t);
+      const iz = radius * Math.sin(p * t);
+      const ax = radius * Math.cos(q * t);
+      const az = radius * Math.sin(actualP * t);
+      const idealLift = 0.075 * Math.sin((p - q) * t);
+      const actualLift = 0.085 * Math.sin((actualP - q) * t);
+      idealPts[i*3] = ix;
+      idealPts[i*3+1] = layerY + idealLift;
+      idealPts[i*3+2] = iz;
+      actualPts[i*3] = ax;
+      actualPts[i*3+1] = layerY + actualLift;
+      actualPts[i*3+2] = az;
     }
+
+    const col = intervalColor(complexity, item.cents);
+    const idealColor = new THREE.Color(0x7187bc);
+    const idealLine = makeContourLine(idealPts, idealColor, index === 0 ? 0.20 : 0.13);
+    const actualLine = makeContourLine(actualPts, col, index === 0 ? 0.58 : 0.76);
+    loopGroup.add(idealLine);
+    loopGroup.add(actualLine);
+    ratioLayerObjects.push({ idealLine, actualLine });
+  });
+
+  trailGeo.setDrawRange(0, 0);
+  trailGeo.attributes.position.needsUpdate = true;
+  trailGeo.attributes.color.needsUpdate = true;
+}
+
+/** Head phase: continuous loop when closed, ping-pong when open. */
+function headPhaseAt(time, closed, period) {
+  const p = ((time / period) % 1 + 1) % 1;
+  if (closed) return p;
+  return 1 - Math.abs(2 * p - 1);
+}
+
+function updateTrail(headFrac) {
+  if (loopN < 2) return;
+
+  const headIdx = headFrac * (loopN - 1);
+  const baseIdx = Math.floor(headIdx);
+  const L = Math.min(TRAIL_LEN, loopN);
+
+  for (let k = 0; k < L; k++) {
+    let src = baseIdx - k;
+    if (loopClosed) src = ((src % loopN) + loopN) % loopN;
+    else src = Math.max(0, Math.min(loopN - 1, src));
+
+    trailPosArr[k*3]     = loopPosArr[src*3];
+    trailPosArr[k*3+1]   = loopPosArr[src*3+1];
+    trailPosArr[k*3+2]   = loopPosArr[src*3+2];
+
+    const f = Math.pow(1 - k / L, 1.6);
+    trailColArr[k*3]     = 0.55 * f;
+    trailColArr[k*3+1]   = 1.00 * f;
+    trailColArr[k*3+2]   = 1.00 * f;
   }
 
-  /* ---- normalise as one unit so the natural proportions are kept ---- */
-  let maxPlanar = 1e-9, maxVert = 1e-9;
-  for (let i = 0; i < CURVE_N; i++) {
-    const p = Math.hypot(rxBuf[i], ryBuf[i]);
-    if (p > maxPlanar) maxPlanar = p;
-    const v = Math.abs(rzBuf[i]);
-    if (v > maxVert) maxVert = v;
-  }
-  const n = 1 / Math.max(maxPlanar, maxVert, 1e-9);
+  trailGeo.setDrawRange(0, L);
+  trailGeo.attributes.position.needsUpdate = true;
+  trailGeo.attributes.color.needsUpdate = true;
 
-  const PLANAR_SPAN = 2.95;
-  const VERT_SPAN   = 1.95;
+  /* head position, smoothly interpolated */
+  const i0 = Math.floor(headIdx);
+  const i1 = loopClosed ? (i0 + 1) % loopN : Math.min(i0 + 1, loopN - 1);
+  const frac = headIdx - i0;
 
-  for (let i = 0; i < CURVE_N; i++) {
-    const t = i / (CURVE_N - 1);
+  const hx = loopPosArr[i0*3]     + (loopPosArr[i1*3]     - loopPosArr[i0*3])     * frac;
+  const hy = loopPosArr[i0*3 + 1] + (loopPosArr[i1*3 + 1] - loopPosArr[i0*3 + 1]) * frac;
+  const hz = loopPosArr[i0*3 + 2] + (loopPosArr[i1*3 + 2] - loopPosArr[i0*3 + 2]) * frac;
 
-    curvePos[i*3]     = rxBuf[i] * n * PLANAR_SPAN;
-    curvePos[i*3 + 1] = rzBuf[i] * n * VERT_SPAN;
-    curvePos[i*3 + 2] = ryBuf[i] * n * PLANAR_SPAN;
-
-    /* colour: cyan → violet → magenta, with softly dissolved ends */
-    const hue = 0.52 + t * 0.38;
-    let fade = Math.min(t / 0.055, (1 - t) / 0.055);
-    fade = Math.max(0, Math.min(1, fade));
-    fade = fade * fade * (3 - 2 * fade);
-
-    tmpColor.setHSL(hue % 1, 0.92, 0.58);
-    curveCol[i*3]     = tmpColor.r * fade;
-    curveCol[i*3 + 1] = tmpColor.g * fade;
-    curveCol[i*3 + 2] = tmpColor.b * fade;
-  }
-
-  curveGeo.attributes.position.needsUpdate = true;
-  curveGeo.attributes.color.needsUpdate = true;
-  curveGeo.computeBoundingSphere();
+  headSprite.position.set(hx, hy, hz);
+  headCore.position.set(hx, hy, hz);
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -584,7 +819,6 @@ function initRing() {
   ringGroup = new THREE.Group();
   scene.add(ringGroup);
 
-  /* base circle */
   const torus = new THREE.Mesh(
     new THREE.TorusGeometry(RING_RADIUS, 0.009, 6, 200),
     new THREE.MeshBasicMaterial({ color: 0x22315a, transparent: true, opacity: 0.75 })
@@ -601,7 +835,6 @@ function initRing() {
   innerTorus.position.y = RING_Y;
   ringGroup.add(innerTorus);
 
-  /* chord polygon */
   chordPos = new Float32Array(13 * 3);
   const chordGeo = new THREE.BufferGeometry();
   chordGeo.setAttribute('position', new THREE.BufferAttribute(chordPos, 3));
@@ -612,7 +845,6 @@ function initRing() {
   }));
   ringGroup.add(chordLine);
 
-  /* nodes */
   for (let pc = 0; pc < 12; pc++) {
     const a = -Math.PI / 2 + pc * TAU / 12;
     const x = Math.cos(a) * RING_RADIUS;
@@ -678,7 +910,6 @@ function updateChordPolygon() {
     chordPos[i*3 + 1] = RING_Y + 0.05;
     chordPos[i*3 + 2] = Math.sin(a) * (RING_RADIUS + 0.02);
   }
-  /* close the loop */
   chordPos[pcs.length*3]     = chordPos[0];
   chordPos[pcs.length*3 + 1] = chordPos[1];
   chordPos[pcs.length*3 + 2] = chordPos[2];
@@ -742,8 +973,7 @@ function updateSpectrumRing() {
     const next = cur + (target - cur) * 0.28;
     bar.userData.level = next;
 
-    const h = 0.06 + next * 1.85;
-    bar.scale.y = h;
+    bar.scale.y = 0.06 + next * 1.85;
     bar.material.opacity = 0.30 + next * 0.85;
   }
 }
@@ -841,15 +1071,12 @@ function noteOn(midi, vel = 1, fromPreset = false) {
   g.gain.setValueAtTime(0.0001, ctx.currentTime);
   g.gain.exponentialRampToValueAtTime(peak, ctx.currentTime + 0.014);
 
-  osc.connect(g);
-  g.connect(master);
+  osc.connect(g); g.connect(master);
   osc.start();
 
   activeNotes.set(midi, { osc, gain: g, freq: f });
 
-  const el = keyEls.get(midi);
-  if (el) el.classList.add('active');
-
+  const el = keyEls.get(midi); if (el) el.classList.add('active');
   onHarmonyChanged();
 }
 
@@ -869,14 +1096,14 @@ function noteOff(midi) {
   try { n.osc.stop(t + 0.30); } catch (e) {}
 
   activeNotes.delete(midi);
-  const el = keyEls.get(midi);
-  if (el) el.classList.remove('active');
-
+  const el = keyEls.get(midi); if (el) el.classList.remove('active');
   onHarmonyChanged();
 }
 
 function releaseAll() {
-  for (const midi of [...activeNotes.keys()]) noteOff(midi);
+  batchHarmonyUpdates(() => {
+    for (const midi of [...activeNotes.keys()]) noteOff(midi);
+  });
 }
 
 function retuneAll() {
@@ -890,9 +1117,27 @@ function retuneAll() {
 }
 
 function onHarmonyChanged() {
-  rebuildCurve();
+  if (harmonyBatchDepth > 0) {
+    harmonyPending = true;
+    return;
+  }
+  buildLoop();
   updateChordPolygon();
   updateReadout();
+}
+
+// Coalesce multi-note preset/release changes into one geometry rebuild.
+function batchHarmonyUpdates(callback) {
+  harmonyBatchDepth++;
+  try {
+    callback();
+  } finally {
+    harmonyBatchDepth--;
+    if (harmonyBatchDepth === 0 && harmonyPending) {
+      harmonyPending = false;
+      onHarmonyChanged();
+    }
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -937,7 +1182,7 @@ const WHITE_SEMI = [0, 2, 4, 5, 7, 9, 11];
 const BLACK_SEMI = [1, 3, 6, 8, 10];
 const BLACK_AFTER = [0, 1, 3, 4, 5];
 const OCTAVES = 2;
-const BASE_MIDI = 48;
+const BASE_MIDI = 60; // Align the visual keyboard with the computer-keyboard map (C4 and up).
 const WHITE_N = OCTAVES * 7;
 
 function buildKeyboard() {
@@ -985,7 +1230,6 @@ function attachKey(el, midi) {
   el.addEventListener('contextmenu', e => e.preventDefault());
 }
 
-/* computer keyboard */
 const KEYMAP = {
   a: 0, w: 1, s: 2, e: 3, d: 4, f: 5, t: 6, g: 7, y: 8, h: 9, u: 10, j: 11,
   k: 12, o: 13, l: 14, p: 15, ';': 16, "'": 17
@@ -1040,18 +1284,26 @@ PRESETS.forEach(p => {
 function togglePreset(p) {
   if (presetActive === p.name) { clearPreset(); return; }
   ensureAudio();
-  clearPreset();
-  presetActive = p.name;
-  presetNotes = p.notes.map(s => 60 + s);
-  for (const m of presetNotes) noteOn(m, 0.85, true);
+  batchHarmonyUpdates(() => {
+    clearPreset();
+    // Presets replace the current chord. This avoids shared-note ownership bugs
+    // when a held manual note overlaps one of the preset pitches.
+    heldKeys.clear();
+    for (const midi of [...activeNotes.keys()]) noteOff(midi);
+    presetActive = p.name;
+    presetNotes = p.notes.map(s => 60 + s);
+    for (const m of presetNotes) noteOn(m, 0.85, true);
+  });
   updatePresetBtns();
 }
 
 function clearPreset() {
   if (!presetActive) return;
-  for (const m of presetNotes) noteOff(m);
-  presetActive = null;
-  presetNotes = [];
+  batchHarmonyUpdates(() => {
+    for (const m of presetNotes) noteOff(m);
+    presetActive = null;
+    presetNotes = [];
+  });
   updatePresetBtns();
 }
 
@@ -1081,7 +1333,7 @@ brightSlider.addEventListener('input', () => {
   state.brightness = parseFloat(brightSlider.value);
   brightVal.textContent = state.brightness.toFixed(2);
   buildWave();
-  rebuildCurve();
+  buildLoop();
 });
 
 /* ---- pointer: orbit + node picking ---- */
@@ -1092,7 +1344,7 @@ stageEl.addEventListener('pointerdown', e => {
   e.preventDefault();
   stageEl.setPointerCapture(e.pointerId);
   dragging = true;
-  dragStart = { x: e.clientX, y: e.clientY, t: performance.now() };
+  dragStart = { x: e.clientX, y: e.clientY, startX: e.clientX, startY: e.clientY, t: performance.now() };
 });
 
 stageEl.addEventListener('pointermove', e => {
@@ -1112,14 +1364,13 @@ function endDrag(e) {
   if (!dragging) return;
   dragging = false;
 
-  const moved = Math.hypot(e.clientX - dragStart.x, e.clientY - dragStart.y);
+  const moved = Math.hypot(e.clientX - dragStart.startX, e.clientY - dragStart.startY);
   const elapsed = performance.now() - dragStart.t;
 
   if (moved < 7 && elapsed < 450) {
     const hit = pickNode(e.clientX, e.clientY);
     if (hit) {
-      const midi = 60 + hit.pc;
-      if (activeNotes.has(midi)) noteOff(midi); else noteOn(midi, 0.95);
+      togglePitchClass(hit.pc);
     }
   }
   dragStart = null;
@@ -1136,6 +1387,23 @@ stageEl.addEventListener('wheel', e => {
 
 const projVec = new THREE.Vector3();
 
+function togglePitchClass(pc) {
+  const matches = [...activeNotes.keys()].filter(midi => ((midi % 12) + 12) % 12 === pc);
+  if (presetActive) {
+    const wasActive = matches.length > 0;
+    clearPreset();
+    if (!wasActive) noteOn(60 + pc, 0.95);
+    return;
+  }
+  batchHarmonyUpdates(() => {
+    if (matches.length) {
+      for (const midi of matches) noteOff(midi);
+    } else {
+      noteOn(60 + pc, 0.95);
+    }
+  });
+}
+
 function pickNode(clientX, clientY) {
   const rect = stageEl.getBoundingClientRect();
   let best = null, bestD = 46;
@@ -1143,6 +1411,7 @@ function pickNode(clientX, clientY) {
   for (const n of ringNodes) {
     n.mesh.getWorldPosition(projVec);
     projVec.project(camera);
+    if (projVec.z < -1 || projVec.z > 1) continue;
     const sx = (projVec.x * 0.5 + 0.5) * rect.width + rect.left;
     const sy = (-projVec.y * 0.5 + 0.5) * rect.height + rect.top;
     const d = Math.hypot(sx - clientX, sy - clientY);
@@ -1171,7 +1440,6 @@ function resize() {
   if (composer) composer.setSize(w, h);
   if (bloomPass) bloomPass.setSize(w, h);
 
-  /* mini spectrum canvas */
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const r = specCanvas.getBoundingClientRect();
   SPEC_W = Math.max(1, Math.round(r.width));
@@ -1270,7 +1538,6 @@ function tick(now) {
   prevTime = now;
   time += dt;
 
-  /* camera orbit */
   if (!dragging) camTheta += dt * 0.045;
 
   const sp = Math.sin(camPhi), cp = Math.cos(camPhi);
@@ -1279,33 +1546,26 @@ function tick(now) {
     camDist * cp,
     camDist * sp * Math.sin(camTheta)
   );
-  camera.lookAt(0, 0.05, 0);
+  camera.lookAt(0, 0.30, 0);
 
-  /* slow spin + gentle tilt so the 3D nesting reads from every angle */
-  if (curveGroup) {
-    curveGroup.rotation.y = time * 0.10;
-    curveGroup.rotation.x = Math.sin(time * 0.17) * 0.13;
+  /* loop group: slow turntable spin + gentle bob */
+  if (loopGroup) {
+    loopGroup.rotation.y = time * 0.055;
+    loopGroup.rotation.x = Math.sin(time * 0.13) * 0.055;
+    loopGroup.position.y = Math.sin(time * 0.42) * 0.06;
   }
 
-  /* travelling head along the curve */
-  if (curvePos && headSprite) {
-    const t = (time * 0.085) % 1;
-    const idx = Math.min(CURVE_N - 1, Math.floor(t * (CURVE_N - 1)));
-    const hx = curvePos[idx*3], hy = curvePos[idx*3+1], hz = curvePos[idx*3+2];
-    headSprite.position.set(hx, hy, hz);
-    headCore.position.set(hx, hy, hz);
-    const pulse = 1 + 0.18 * Math.sin(time * 9);
-    headSprite.scale.set(1.55 * pulse, 1.55 * pulse, 1);
+  /* animated head + trail */
+  if (loopN > 1) {
+    const headFrac = headPhaseAt(time, loopClosed, loopPeriod);
+    updateTrail(headFrac);
   }
 
-  /* rings */
   updateRingVisuals(time);
   updateSpectrumRing();
 
-  /* stars drift */
   if (starField) starField.rotation.y = time * 0.008;
 
-  /* panel spectrum at ~20 fps */
   specAccum += dt;
   if (specAccum > 0.05) { specAccum = 0; drawMiniSpectrum(); }
 
@@ -1319,13 +1579,13 @@ function tick(now) {
 
 try {
   initThree();
-  initCurve();
+  initLoop();
   initRing();
   initSpectrumRing();
 
   buildKeyboard();
   resize();
-  rebuildCurve();
+  buildLoop();
   updateChordPolygon();
   updateReadout();
 
